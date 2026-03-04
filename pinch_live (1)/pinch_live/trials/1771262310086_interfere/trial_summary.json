@@ -1,0 +1,16 @@
+{
+  "trial_id": "1771262310086_interfere",
+  "trial_type": "interfere",
+  "condition": "near/bright",
+  "frames": 271,
+  "duration_sec": 40.0,
+  "mean_total_latency_ms": 131.66973876953125,
+  "p95_total_latency_ms": 147.36902618408203,
+  "mean_fps": 6.775,
+  "track_count": 13,
+  "avg_switches_per_track": 0.15384615384615385,
+  "frame_log_csv": "C:\\Users\\ameer\\OneDrive\\Desktop\\PINCH-main\\pinch_live (1)\\pinch_live\\trials\\1771262310086_interfere\\frame_log.csv",
+  "event_log_csv": "C:\\Users\\ameer\\OneDrive\\Desktop\\PINCH-main\\pinch_live (1)\\pinch_live\\trials\\1771262310086_interfere\\event_log.csv",
+  "gt_samples": 0,
+  "top1_accuracy": null
+}

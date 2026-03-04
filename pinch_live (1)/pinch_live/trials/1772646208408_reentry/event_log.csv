@@ -1,0 +1,10 @@
+trial_id,trial_type,condition,t_ms,event,track_id,pred,gt,sim
+1772646208408_reentry,reentry,far/dim,1772646209344,track_new,1,,,
+1772646208408_reentry,reentry,far/dim,1772646209422,track_lost,1,,,
+1772646208408_reentry,reentry,far/dim,1772646210048,track_new,2,,,
+1772646208408_reentry,reentry,far/dim,1772646213408,track_lost,2,,,
+1772646208408_reentry,reentry,far/dim,1772646217942,track_lost,2,,,
+1772646208408_reentry,reentry,far/dim,1772646218865,track_lost,2,,,
+1772646208408_reentry,reentry,far/dim,1772646222271,track_lost,2,,,
+1772646208408_reentry,reentry,far/dim,1772646222525,track_new,3,,,
+1772646208408_reentry,reentry,far/dim,1772646223459,track_lost,3,,,

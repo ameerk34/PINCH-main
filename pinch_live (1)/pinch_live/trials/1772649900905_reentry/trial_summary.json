@@ -1,0 +1,16 @@
+{
+  "trial_id": "1772649900905_reentry",
+  "trial_type": "reentry",
+  "condition": "near/bright",
+  "frames": 199,
+  "duration_sec": 18.0,
+  "mean_total_latency_ms": 76.02334594726562,
+  "p95_total_latency_ms": 98.54921951293944,
+  "mean_fps": 11.055555555555555,
+  "track_count": 1,
+  "avg_switches_per_track": 1.0,
+  "frame_log_csv": "C:\\Users\\ameer\\OneDrive\\Desktop\\PINCH-main\\pinch_live (1)\\pinch_live\\trials\\1772649900905_reentry\\frame_log.csv",
+  "event_log_csv": "C:\\Users\\ameer\\OneDrive\\Desktop\\PINCH-main\\pinch_live (1)\\pinch_live\\trials\\1772649900905_reentry\\event_log.csv",
+  "gt_samples": 0,
+  "top1_accuracy": null
+}
