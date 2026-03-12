@@ -18,7 +18,7 @@ import os
 import json
 import time
 import random
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Dict, List, Tuple, Optional
 
 import cv2
@@ -239,30 +239,36 @@ def draw_sci_box(draw: ImageDraw.ImageDraw, rect, color=C_ACCENT, alpha=255):
         draw.line(poly, fill=c, width=t)
 
 _BG_IMAGE = None
-def get_bg(w, h):
-    # Generate a nice radial gradient background
-    global _BG_IMAGE
-    if _BG_IMAGE is None or _BG_IMAGE.size != (w, h):
+_BG_IMAGE_BRIGHT = None
+def get_bg(w, h, bright_mode: bool = False):
+    # Generate a background. In dim trials we intentionally brighten the surround
+    # so the display itself can act as a light source around the camera feed.
+    global _BG_IMAGE, _BG_IMAGE_BRIGHT
+    cache = _BG_IMAGE_BRIGHT if bright_mode else _BG_IMAGE
+    if cache is None or cache.size != (w, h):
         # Create gradient
         arr = np.zeros((h, w, 3), dtype=np.uint8)
-        # Deep radial gradient manually
-        # Center roughly
-        cx, cy = w // 2, h // 2
-        # Grid ?
-        # Linear vertical gradient
         y = np.linspace(0, 1, h)[:, None]
-        top = np.array(C_BG_TOP)
-        bot = np.array(C_BG)
+        if bright_mode:
+            top = np.array((255, 255, 255))
+            bot = np.array((242, 245, 250))
+        else:
+            top = np.array(C_BG_TOP)
+            bot = np.array(C_BG)
         bg = (1 - y) * top + y * bot
         bg = bg[:, None, :]  # (h, 1, 3)
         bg = np.broadcast_to(bg, (h, w, 3)).astype(np.uint8)
         
         # Add some noise
-        noise = np.random.randint(0, 5, (h, w, 3), dtype=np.uint8)
+        noise_amp = 2 if bright_mode else 5
+        noise = np.random.randint(0, noise_amp, (h, w, 3), dtype=np.uint8)
         bg = cv2.add(bg, noise)
-        
-        _BG_IMAGE = Image.fromarray(bg)
-    return _BG_IMAGE.copy()
+        cache = Image.fromarray(bg)
+        if bright_mode:
+            _BG_IMAGE_BRIGHT = cache
+        else:
+            _BG_IMAGE = cache
+    return cache.copy()
 
 def point_in(x, y, r):
     rx, ry, rw, rh = r
@@ -533,9 +539,9 @@ class VideoSource:
 # ============================================================
 # CANVAS COMPOSITION
 # ============================================================
-def compose_canvas_pil(frame_bgr: np.ndarray) -> Tuple[Image.Image, float, int, int, Tuple[int, int, int, int]]:
+def compose_canvas_pil(frame_bgr: np.ndarray, bright_mode: bool = False) -> Tuple[Image.Image, float, int, int, Tuple[int, int, int, int]]:
     # Create base
-    canvas = get_bg(CANVAS_W, CANVAS_H).convert("RGBA")
+    canvas = get_bg(CANVAS_W, CANVAS_H, bright_mode=bright_mode).convert("RGBA")
     
     # We want a full-screen-ish experience.
     # Let's target the video to be central, slightly elevated.
@@ -569,11 +575,13 @@ def compose_canvas_pil(frame_bgr: np.ndarray) -> Tuple[Image.Image, float, int, 
     draw = ImageDraw.Draw(canvas, "RGBA")
     
     # Video backing/glow
-    draw_rect_filled(draw, (offx - 2, offy - 2, rw + 4, rh + 4), C_BG, r=0, alpha=100)
-    draw_rect_stroke(draw, (offx - 2, offy - 2, rw + 4, rh + 4), C_ACCENT_DIM, width=1)
+    backing = (255, 255, 255) if bright_mode else C_BG
+    frame_col = (210, 215, 225) if bright_mode else C_ACCENT_DIM
+    draw_rect_filled(draw, (offx - 2, offy - 2, rw + 4, rh + 4), backing, r=0, alpha=110 if bright_mode else 100)
+    draw_rect_stroke(draw, (offx - 2, offy - 2, rw + 4, rh + 4), frame_col, width=1)
     
     # Decoration: Corner brackets on the video frame
-    draw_sci_box(draw, (offx - 10, offy - 10, rw + 20, rh + 20), C_ACCENT_DIM, alpha=150)
+    draw_sci_box(draw, (offx - 10, offy - 10, rw + 20, rh + 20), frame_col, alpha=170 if bright_mode else 150)
 
     # Paste video
     canvas.paste(frame_pil, (offx, offy))
@@ -742,11 +750,9 @@ def _marker_loglike(emb: np.ndarray, mean: Optional[List[float]], var: Optional[
     inv_var = 1.0 / (v + 1e-6)
     return float(-0.5 * np.sum(diff * diff * inv_var))
 
-def match_marker(emb: np.ndarray, registry: Registry) -> Tuple[str, float]:
+def score_marker_candidates(emb: np.ndarray, registry: Registry) -> List[Tuple[str, float, bool]]:
     emb = safe_norm(np.asarray(emb, dtype=np.float32))
-    best_name = "unknown"
-    best_sim = -1.0
-    best_thr = None
+    candidates: List[Tuple[str, float, bool]] = []
     for m in registry.markers:
         P = np.array(m.proto, dtype=np.float32)
         if P.size == 0:
@@ -755,18 +761,22 @@ def match_marker(emb: np.ndarray, registry: Registry) -> Tuple[str, float]:
             P = np.expand_dims(P, axis=0)
         P = np.stack([safe_norm(p) for p in P], axis=0)
         sim = float(np.max(P @ emb))
-        if sim > best_sim:
-            best_sim = sim
-            best_name = m.marker_id
-            best_thr = m.thr
-
-    # Reject only when similarity is genuinely low.
-    if best_name != "unknown":
         floor = 0.35
-        if best_thr is not None:
-            floor = max(floor, float(best_thr) - 0.08)
-        if best_sim < floor:
-            return "unknown", best_sim
+        if getattr(m, "thr", None) is not None:
+            floor = max(floor, float(m.thr) - 0.08)
+        candidates.append((m.marker_id, sim, sim >= floor))
+
+    candidates.sort(key=lambda x: x[1], reverse=True)
+    return candidates
+
+def match_marker(emb: np.ndarray, registry: Registry) -> Tuple[str, float]:
+    candidates = score_marker_candidates(emb, registry)
+    if not candidates:
+        return "unknown", -1.0
+
+    best_name, best_sim, best_ok = candidates[0]
+    if best_ok:
+        return best_name, best_sim
     return best_name, best_sim
 
 # ============================================================
@@ -785,40 +795,61 @@ class TrackState:
     pending_count: int = 0
     # how many consecutive frames proposed as unknown while last_name != "unknown"
     unknown_streak: int = 0
+    blocked_names_until: Dict[str, int] = field(default_factory=dict)
 
-
-def update_identity(ts: TrackState, z: np.ndarray, registry: Registry, cls_ctx: Optional[Dict[str, np.ndarray]] = None) -> Tuple[str, float]:
+def update_track_embedding(ts: TrackState, z: np.ndarray) -> np.ndarray:
     z = safe_norm(np.asarray(z, dtype=np.float32))
     if ts.z_ema is None:
         ts.z_ema = z.copy()
     else:
         ts.z_ema = safe_norm(EMA_ALPHA * ts.z_ema + (1.0 - EMA_ALPHA) * z)
+    return ts.z_ema
 
-    # Prototype + density-based candidate
-    pred_proto, sim_proto = match_marker(ts.z_ema, registry)
-    final_pred = pred_proto
-    final_score = sim_proto
+def classifier_candidate(emb: np.ndarray, cls_ctx: Optional[Dict[str, np.ndarray]]) -> Tuple[str, float]:
+    if cls_ctx is None:
+        return "unknown", -1.0
 
-    # Optional classifier-based rescue for unknowns
-    if cls_ctx is not None and pred_proto == "unknown":
-        W = cls_ctx.get("W")
-        b = cls_ctx.get("b")
-        names = cls_ctx.get("names", [])
-        thr = cls_ctx.get("thr")
-        if W is not None and b is not None and thr is not None and len(names) == W.shape[0]:
-            z_vec = ts.z_ema.astype(np.float32)
-            logits = W @ z_vec + b
-            logits = logits - float(np.max(logits))
-            exp = np.exp(logits)
-            denom = float(np.sum(exp)) + 1e-9
-            probs = exp / denom
-            k = int(np.argmax(probs))
-            p_max = float(probs[k])
-            p_thr = float(thr[k])
-            if p_max >= p_thr:
-                final_pred = names[k]
-                final_score = p_max
+    W = cls_ctx.get("W")
+    b = cls_ctx.get("b")
+    names = cls_ctx.get("names", [])
+    thr = cls_ctx.get("thr")
+    if W is None or b is None or thr is None or len(names) != W.shape[0]:
+        return "unknown", -1.0
 
+    z_vec = emb.astype(np.float32)
+    logits = W @ z_vec + b
+    logits = logits - float(np.max(logits))
+    exp = np.exp(logits)
+    denom = float(np.sum(exp)) + 1e-9
+    probs = exp / denom
+    k = int(np.argmax(probs))
+    p_max = float(probs[k])
+    p_thr = float(thr[k])
+    if p_max >= p_thr:
+        return names[k], p_max
+    return "unknown", p_max
+
+def choose_identity_candidate(
+    emb: np.ndarray,
+    registry: Registry,
+    cls_ctx: Optional[Dict[str, np.ndarray]] = None,
+    blocked_names: Optional[set] = None,
+) -> Tuple[str, float]:
+    blocked = blocked_names or set()
+    candidates = score_marker_candidates(emb, registry)
+
+    best_sim = candidates[0][1] if candidates else -1.0
+    for name, sim, accepted in candidates:
+        if accepted and name not in blocked:
+            return name, sim
+
+    cls_name, cls_score = classifier_candidate(emb, cls_ctx)
+    if cls_name != "unknown" and cls_name not in blocked:
+        return cls_name, cls_score
+
+    return "unknown", best_sim
+
+def commit_identity_decision(ts: TrackState, final_pred: str, final_score: float) -> Tuple[str, float]:
     # Temporal logic: brief weak frames should not cause immediate identity drops.
     if final_pred == "unknown":
         if ts.last_name != "unknown" and final_score >= max(0.30, ts.last_sim - 0.15):
@@ -864,6 +895,11 @@ def update_identity(ts: TrackState, z: np.ndarray, registry: Registry, cls_ctx: 
 
     ts.seen_frames += 1
     return ts.last_name, ts.last_sim
+
+def update_identity(ts: TrackState, z: np.ndarray, registry: Registry, cls_ctx: Optional[Dict[str, np.ndarray]] = None) -> Tuple[str, float]:
+    emb = update_track_embedding(ts, z)
+    final_pred, final_score = choose_identity_candidate(emb, registry, cls_ctx=cls_ctx)
+    return commit_identity_decision(ts, final_pred, final_score)
 
 # ============================================================
 # LOGGING (paper relevant)
@@ -1065,7 +1101,10 @@ class PINCHApp:
 
         self.selected_track: Optional[int] = None
         self.gt_map: Dict[int, str] = {}
-        self.gt_enabled = True
+        self.gt_enabled = False
+        self.feedback_interval_s = 3.0
+        self.feedback_last_prompt_t = 0.0
+        self.feedback_prompt: Optional[Dict[str, object]] = None
 
         self.frame_cols, self.frame_rows = new_frame_logger()
         self.event_cols, self.event_rows = new_event_logger()
@@ -1192,6 +1231,47 @@ class PINCHApp:
         d = "near" if self.condition_near else "far"
         l = "bright" if self.condition_bright else "dim"
         return f"{d}/{l}"
+
+    def _prune_track_blocks(self, ts: TrackState):
+        expired = [name for name, until_frame in ts.blocked_names_until.items() if self.frame_idx >= until_frame]
+        for name in expired:
+            del ts.blocked_names_until[name]
+
+    def _select_feedback_candidate(self, preds: List[Tuple[int, str, float, Tuple[int, int, int, int]]]) -> Optional[Dict[str, object]]:
+        known = [(tid, pred, sim, box) for (tid, pred, sim, box) in preds if tid >= 0 and pred != "unknown"]
+        if not known:
+            return None
+        tid, pred, sim, box = max(known, key=lambda item: item[2])
+        return {"track_id": tid, "pred": pred, "sim": float(sim), "box": box}
+
+    def _handle_feedback_response(self, accepted: bool):
+        if not self.feedback_prompt:
+            return
+        tid = int(self.feedback_prompt["track_id"])
+        pred = str(self.feedback_prompt["pred"])
+        sim = float(self.feedback_prompt["sim"])
+        ts = self.states.get(tid)
+        if ts is None:
+            self.feedback_prompt = None
+            return
+
+        evt = "feedback_correct" if accepted else "feedback_incorrect"
+        self.event_rows.append([self.trial_id, self.trial_type, self.condition_str(), now_ms(), evt, tid, pred, "", round(sim, 4)])
+
+        if accepted:
+            ts.last_sim = max(ts.last_sim, sim + 0.02)
+            ts.pending_name = pred
+            ts.pending_count = 0
+        else:
+            ts.blocked_names_until[pred] = self.frame_idx + 180
+            ts.last_name = "unknown"
+            ts.last_sim = -1.0
+            ts.pending_name = "unknown"
+            ts.pending_count = 0
+            ts.unknown_streak = 0
+
+        self.feedback_last_prompt_t = time.time()
+        self.feedback_prompt = None
 
     def draw_nav(self, draw: ImageDraw.ImageDraw, title, subtitle=""):
         # Glass panel top
@@ -1520,7 +1600,7 @@ class PINCHApp:
         self.trial_type = "swipe"
         self.condition_near = True
         self.condition_bright = True
-        self.gt_enabled = True
+        self.gt_enabled = False
         self.source.open_webcam(self.source.webcam_index)
 
     def live_trial_setup_screen(self, draw: ImageDraw.ImageDraw):
@@ -1577,7 +1657,7 @@ class PINCHApp:
         bright_btn.toggled = self.condition_bright
         dim_btn.toggled = not self.condition_bright
         
-        gt_btn = Button("GT ON" if self.gt_enabled else "GT OFF", (col2_x + 20, panel_y + 210, 280, 50), tag="gt")
+        gt_btn = Button("Feedback Mode ON" if self.gt_enabled else "Feedback Mode OFF", (col2_x + 20, panel_y + 210, 280, 50), tag="gt")
         gt_btn.toggled = self.gt_enabled
         
         for b in (near_btn, far_btn, bright_btn, dim_btn, gt_btn):
@@ -1983,6 +2063,8 @@ class PINCHApp:
         self.active_prev = set()
         self.selected_track = None
         self.gt_map = {}
+        self.feedback_prompt = None
+        self.feedback_last_prompt_t = 0.0
 
         self.frame_cols, self.frame_rows = new_frame_logger()
         self.event_cols, self.event_rows = new_event_logger()
@@ -2121,6 +2203,7 @@ class PINCHApp:
         t_match0 = time.time()
         preds = []
         active_now = set()
+        tracked_items = []
 
         for i in range(Z.shape[0]):
             tid, box = det_meta[i]
@@ -2136,8 +2219,35 @@ class PINCHApp:
                 self.states[tid] = TrackState(track_id=tid, last_seen_frame=self.frame_idx)
                 self.event_rows.append([self.trial_id, self.trial_type, self.condition_str(), now_ms(), "track_new", tid, "", "", ""])
             self.states[tid].last_seen_frame = self.frame_idx
+            emb = update_track_embedding(self.states[tid], z)
+            candidates = score_marker_candidates(emb, self.registry)
+            best_sim = candidates[0][1] if candidates else -1.0
+            tracked_items.append((tid, box, emb, best_sim))
 
-            pred, sim = update_identity(self.states[tid], z, self.registry, self.cls_ctx)
+        # Enforce one active name per frame by assigning stronger tracks first.
+        reserved_names = set()
+        tracked_items.sort(
+            key=lambda item: (
+                self.states[item[0]].last_name != "unknown",
+                item[3],
+                self.states[item[0]].last_sim,
+            ),
+            reverse=True,
+        )
+        for tid, box, emb, _best_sim in tracked_items:
+            tr_state = self.states[tid]
+            self._prune_track_blocks(tr_state)
+            blocked_names = set(reserved_names)
+            blocked_names.update(tr_state.blocked_names_until.keys())
+            pred, sim = choose_identity_candidate(
+                emb,
+                self.registry,
+                cls_ctx=self.cls_ctx,
+                blocked_names=blocked_names,
+            )
+            pred, sim = commit_identity_decision(tr_state, pred, sim)
+            if pred != "unknown":
+                reserved_names.add(pred)
             preds.append((tid, pred, float(sim), box))
 
         match_ms = (time.time() - t_match0) * 1000.0
@@ -2183,6 +2293,42 @@ class PINCHApp:
             draw_rect_filled(draw, (cx1, cy1 - 20, tw + 10, 20), to_pil_color(col, 200))
             draw_text_pil(draw, (cx1 + 5, cy1 - 18), lbl, _FONT_SMALL, (0,0,0))
 
+        if self.gt_enabled:
+            if self.feedback_prompt is not None:
+                active_tid = int(self.feedback_prompt["track_id"])
+                active_pred = str(self.feedback_prompt["pred"])
+                still_valid = any(tid == active_tid and pred == active_pred for tid, pred, _sim, _box in preds)
+                if not still_valid:
+                    self.feedback_prompt = None
+
+            if self.feedback_prompt is None and (time.time() - self.feedback_last_prompt_t) >= self.feedback_interval_s:
+                self.feedback_prompt = self._select_feedback_candidate(preds)
+
+            if self.feedback_prompt is not None:
+                tid = int(self.feedback_prompt["track_id"])
+                pred = str(self.feedback_prompt["pred"])
+                sim = float(self.feedback_prompt["sim"])
+                fx, fy, fw, fh = CANVAS_W - 320, 280, 300, 160
+                self.draw_hud_panel(draw, "FEEDBACK MODE", [
+                    f"TRACK: T{tid}",
+                    f"NAME: {pred}",
+                    f"CONF: {int(sim * 100)}%",
+                    "Is this correct?",
+                ], fx, fy, fw, fh)
+
+                yes_btn = Button("Correct", (fx + 15, fy + 105, 125, 40), tag="fb_yes")
+                no_btn = Button("Incorrect", (fx + 160, fy + 105, 125, 40), tag="fb_no")
+                for b in (yes_btn, no_btn):
+                    b.hover = point_in(self.mouse_x, self.mouse_y, b.rect)
+                    draw_button_pil(draw, b, primary=True)
+
+                if self.clicked and (yes_btn.hover or no_btn.hover):
+                    self.consume_click()
+                    if yes_btn.hover:
+                        self._handle_feedback_response(accepted=True)
+                    elif no_btn.hover:
+                        self._handle_feedback_response(accepted=False)
+
         stop = Button("END TRIAL", (CANVAS_W // 2 - 100, CANVAS_H - 80, 200, 50), tag="stop")
         stop.hover = point_in(self.mouse_x, self.mouse_y, stop.rect)
         draw_button_pil(draw, stop, primary=True)
@@ -2211,7 +2357,8 @@ class PINCHApp:
     def tick(self, frame_bgr, key):
         # 1. Compose base canvas (video + bg)
         # Returns PIL Image "canvas"
-        canvas, s, offx, offy, view_rect = compose_canvas_pil(frame_bgr)
+        bright_mode = self.screen in ("live_trial_run", "demo_trial_run") and (not self.condition_bright)
+        canvas, s, offx, offy, view_rect = compose_canvas_pil(frame_bgr, bright_mode=bright_mode)
         
         # 2. Create Draw object
         draw = ImageDraw.Draw(canvas, "RGBA")
