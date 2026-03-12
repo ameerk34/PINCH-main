@@ -1,0 +1,3 @@
+trial_id,trial_type,condition,t_ms,event,track_id,pred,gt,sim
+1773325539085_swipe,swipe,near/dim,1773325539580,track_new,1,,,
+1773325539085_swipe,swipe,near/dim,1773325539779,track_lost,1,,,

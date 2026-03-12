@@ -1,0 +1,5 @@
+trial_id,trial_type,condition,t_ms,event,track_id,pred,gt,sim
+1772739317582_interfere,interfere,near/bright,1772739317896,track_new,1,,,
+1772739317582_interfere,interfere,near/bright,1772739317896,track_new,2,,,
+1772739317582_interfere,interfere,near/bright,1772739325274,track_lost,1,,,
+1772739317582_interfere,interfere,near/bright,1772739325414,track_lost,2,,,

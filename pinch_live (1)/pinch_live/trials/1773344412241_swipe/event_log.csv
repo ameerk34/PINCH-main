@@ -1,0 +1,5 @@
+trial_id,trial_type,condition,t_ms,event,track_id,pred,gt,sim
+1773344412241_swipe,swipe,near/dim,1773344412482,track_new,1,,,
+1773344412241_swipe,swipe,near/dim,1773344416141,feedback_correct,1,big L,,0.9576
+1773344412241_swipe,swipe,near/dim,1773344426193,feedback_incorrect,1,slim r,,0.9182
+1773344412241_swipe,swipe,near/dim,1773344430594,feedback_correct,1,big L,,0.905

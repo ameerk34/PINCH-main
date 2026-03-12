@@ -74,7 +74,7 @@ DECISION_HYST = 0.05
 
 # Enrollment steps (seconds)
 ENROLL_STEPS = [
-    ("Hold front-facing", 8),
+    ("Hold front-facing", 10),
     ("Swipe left-right", 10),
     ("Swipe up-down", 10),
     ("Hold left side", 6),
@@ -213,7 +213,13 @@ def measure_text(text, font=None):
     bbox = font.getbbox(text)
     return bbox[2] - bbox[0], bbox[3] - bbox[1]
 
+UI_DIM_LIGHT_MODE = False
+
 def draw_glass_panel(draw: ImageDraw.ImageDraw, rect, color=C_CARD, alpha=240, border=C_STROKE):
+    if UI_DIM_LIGHT_MODE:
+        color = (255, 255, 255)
+        border = (230, 230, 230)
+        alpha = 245
     # Main bg
     draw_rect_filled(draw, rect, color, r=12, alpha=alpha)
     # Subtle highlighting via gradient simulation or just stroke
@@ -251,7 +257,7 @@ def get_bg(w, h, bright_mode: bool = False):
         y = np.linspace(0, 1, h)[:, None]
         if bright_mode:
             top = np.array((255, 255, 255))
-            bot = np.array((242, 245, 250))
+            bot = np.array((245, 245, 245))
         else:
             top = np.array(C_BG_TOP)
             bot = np.array(C_BG)
@@ -260,8 +266,7 @@ def get_bg(w, h, bright_mode: bool = False):
         bg = np.broadcast_to(bg, (h, w, 3)).astype(np.uint8)
         
         # Add some noise
-        noise_amp = 2 if bright_mode else 5
-        noise = np.random.randint(0, noise_amp, (h, w, 3), dtype=np.uint8)
+        noise = np.random.randint(0, 2 if bright_mode else 5, (h, w, 3), dtype=np.uint8)
         bg = cv2.add(bg, noise)
         cache = Image.fromarray(bg)
         if bright_mode:
@@ -576,12 +581,12 @@ def compose_canvas_pil(frame_bgr: np.ndarray, bright_mode: bool = False) -> Tupl
     
     # Video backing/glow
     backing = (255, 255, 255) if bright_mode else C_BG
-    frame_col = (210, 215, 225) if bright_mode else C_ACCENT_DIM
-    draw_rect_filled(draw, (offx - 2, offy - 2, rw + 4, rh + 4), backing, r=0, alpha=110 if bright_mode else 100)
+    frame_col = (235, 235, 235) if bright_mode else C_ACCENT_DIM
+    draw_rect_filled(draw, (offx - 2, offy - 2, rw + 4, rh + 4), backing, r=0, alpha=115 if bright_mode else 100)
     draw_rect_stroke(draw, (offx - 2, offy - 2, rw + 4, rh + 4), frame_col, width=1)
     
     # Decoration: Corner brackets on the video frame
-    draw_sci_box(draw, (offx - 10, offy - 10, rw + 20, rh + 20), frame_col, alpha=170 if bright_mode else 150)
+    draw_sci_box(draw, (offx - 10, offy - 10, rw + 20, rh + 20), frame_col, alpha=190 if bright_mode else 150)
 
     # Paste video
     canvas.paste(frame_pil, (offx, offy))
@@ -958,7 +963,16 @@ class Button:
 def draw_button_pil(draw: ImageDraw.ImageDraw, b: Button, primary=True):
     x, y, w, h = b.rect
     
-    if not b.enabled:
+    if UI_DIM_LIGHT_MODE:
+        if not b.enabled:
+            fill_col = to_pil_color((252, 252, 252), 180)
+            stroke_col = to_pil_color((235, 235, 235), 180)
+            text_col = (150, 150, 150)
+        else:
+            fill_col = to_pil_color((255, 255, 255), 245)
+            stroke_col = to_pil_color((230, 230, 230), 255)
+            text_col = (20, 25, 35)
+    elif not b.enabled:
         fill_col = to_pil_color(C_CARD, 100)
         stroke_col = to_pil_color(C_STROKE, 80)
         text_col = C_TEXT_DIM
@@ -994,17 +1008,22 @@ def draw_input_pil(draw: ImageDraw.ImageDraw, rect, label, value, placeholder=""
     x, y, w, h = rect
     
     # Label
-    draw_text_pil(draw, (x, y - 18), label, font=_FONT_SMALL, color=C_TEXT_DIM)
+    label_col = (90, 90, 90) if UI_DIM_LIGHT_MODE else C_TEXT_DIM
+    draw_text_pil(draw, (x, y - 18), label, font=_FONT_SMALL, color=label_col)
     
     # Box
-    bg_col = C_CARD_HOVER if active else C_CARD
-    border = C_ACCENT if active else C_STROKE
+    if UI_DIM_LIGHT_MODE:
+        bg_col = (255, 255, 255)
+        border = (220, 220, 220)
+    else:
+        bg_col = C_CARD_HOVER if active else C_CARD
+        border = C_ACCENT if active else C_STROKE
     draw_rect_filled(draw, (x, y, w, h), bg_col, r=6)
     draw_rect_stroke(draw, (x, y, w, h), border, r=6, width=1 if not active else 2)
     
     # Text
     text_to_show = value if value else placeholder
-    col = C_TEXT if value else C_TEXT_DIM
+    col = (20, 25, 35) if UI_DIM_LIGHT_MODE else (C_TEXT if value else C_TEXT_DIM)
     
     # Clip text if too long?
     draw_text_pil(draw, (x + 10, y + 10), text_to_show, _FONT_MONO, color=col)
@@ -1016,7 +1035,7 @@ def draw_input_pil(draw: ImageDraw.ImageDraw, rect, label, value, placeholder=""
         draw.line([(cx, y + 10), (cx, y + h - 10)], fill=to_pil_color(C_ACCENT), width=1)
 
     if hint:
-        draw_text_pil(draw, (x, y + h + 6), hint, _FONT_SMALL, color=C_TEXT_DIM)
+        draw_text_pil(draw, (x, y + h + 6), hint, _FONT_SMALL, color=label_col)
 
 def pill_pil(draw: ImageDraw.ImageDraw, x, y, text, color, text_color=C_TEXT):
     tw, th = measure_text(text, _FONT_SMALL)
@@ -1232,6 +1251,9 @@ class PINCHApp:
         l = "bright" if self.condition_bright else "dim"
         return f"{d}/{l}"
 
+    def use_dim_screen_light(self) -> bool:
+        return self.screen in ("live_trial_run", "demo_trial_run") and (not self.condition_bright)
+
     def _prune_track_blocks(self, ts: TrackState):
         expired = [name for name, until_frame in ts.blocked_names_until.items() if self.frame_idx >= until_frame]
         for name in expired:
@@ -1274,30 +1296,42 @@ class PINCHApp:
         self.feedback_prompt = None
 
     def draw_nav(self, draw: ImageDraw.ImageDraw, title, subtitle=""):
+        dim_light = self.use_dim_screen_light()
+        nav_bg = (250, 250, 250) if dim_light else C_BG_TOP
+        nav_border = (220, 225, 232) if dim_light else C_STROKE
+        title_col = (15, 20, 28) if dim_light else C_TEXT
+        sub_col = (70, 82, 96) if dim_light else C_TEXT_DIM
+        pill_bg = (235, 238, 242) if dim_light else C_CARD2
+        reg_pill_bg = (245, 245, 245) if dim_light else C_BG
         # Glass panel top
-        draw_glass_panel(draw, (-10, -10, CANVAS_W + 20, NAV_H + 10), color=C_BG_TOP, alpha=240, border=C_STROKE)
+        draw_glass_panel(draw, (-10, -10, CANVAS_W + 20, NAV_H + 10), color=nav_bg, alpha=245, border=nav_border)
         
         # Logo mark
         draw_rect_filled(draw, (UI_PAD, 20, 6, NAV_H - 40), C_ACCENT)
         
-        draw_text_pil(draw, (UI_PAD + 20, 18), title.upper(), font=_FONT_TITLE, color=C_TEXT)
+        draw_text_pil(draw, (UI_PAD + 20, 18), title.upper(), font=_FONT_TITLE, color=title_col)
         if subtitle:
-            draw_text_pil(draw, (UI_PAD + 20, 52), subtitle, font=_FONT_SMALL, color=C_TEXT_DIM)
+            draw_text_pil(draw, (UI_PAD + 20, 52), subtitle, font=_FONT_SMALL, color=sub_col)
             
         # Right side info
         info_x = CANVAS_W - 300
-        pill_pil(draw, info_x, 26, self.source.describe(), C_CARD2)
+        pill_pil(draw, info_x, 26, self.source.describe(), pill_bg, text_color=title_col)
         
         reg_txt = "Registry: none" if self.registry is None else f"Registry: {len(self.registry.markers)}"
         reg_col = C_ERR if self.registry is None else C_OK
-        pill_pil(draw, info_x + 160, 26, reg_txt, to_pil_color(C_BG, 100), text_color=reg_col)
+        pill_pil(draw, info_x + 160, 26, reg_txt, reg_pill_bg, text_color=reg_col)
 
     def draw_hud_panel(self, draw: ImageDraw.ImageDraw, title, lines: List[str], x, y, w, h):
-        draw_glass_panel(draw, (x, y, w, h), color=C_BG, alpha=HUD_OPACITY)
-        draw_text_pil(draw, (x + 15, y + 15), title, font=_FONT_MAIN, color=C_ACCENT)
+        dim_light = self.use_dim_screen_light()
+        panel_bg = (250, 250, 250) if dim_light else C_BG
+        panel_text = (78, 96, 120) if dim_light else C_ACCENT
+        body_text = (70, 82, 96) if dim_light else C_TEXT_DIM
+        panel_border = (220, 225, 232) if dim_light else C_STROKE
+        draw_glass_panel(draw, (x, y, w, h), color=panel_bg, alpha=245 if dim_light else HUD_OPACITY, border=panel_border)
+        draw_text_pil(draw, (x + 15, y + 15), title, font=_FONT_MAIN, color=panel_text)
         curr_y = y + 45
         for line in lines:
-            draw_text_pil(draw, (x + 15, curr_y), line, font=_FONT_SMALL, color=C_TEXT_DIM)
+            draw_text_pil(draw, (x + 15, curr_y), line, font=_FONT_SMALL, color=body_text)
             curr_y += 20
 
     def handle_text_input(self, key, buf: str, max_len=80) -> str:
@@ -2357,8 +2391,9 @@ class PINCHApp:
     def tick(self, frame_bgr, key):
         # 1. Compose base canvas (video + bg)
         # Returns PIL Image "canvas"
-        bright_mode = self.screen in ("live_trial_run", "demo_trial_run") and (not self.condition_bright)
-        canvas, s, offx, offy, view_rect = compose_canvas_pil(frame_bgr, bright_mode=bright_mode)
+        global UI_DIM_LIGHT_MODE
+        UI_DIM_LIGHT_MODE = self.use_dim_screen_light()
+        canvas, s, offx, offy, view_rect = compose_canvas_pil(frame_bgr, bright_mode=UI_DIM_LIGHT_MODE)
         
         # 2. Create Draw object
         draw = ImageDraw.Draw(canvas, "RGBA")
