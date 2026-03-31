@@ -38,7 +38,13 @@ from ultralytics import YOLO
 # ============================================================
 # USER SETTINGS
 # ============================================================
-YOLO_WEIGHTS = r"C:\Users\ameer\OneDrive\Desktop\PINCH-main\letsgo\best.pt"
+MODEL_DIR = r"C:\Users\ameer\OneDrive\Desktop\PINCH-main\letsgo\models"
+DETECTOR_MODELS = {
+    "nano": os.path.join(MODEL_DIR, "nano_best.pt"),
+    "medium": os.path.join(MODEL_DIR, "medium_best.pt"),
+}
+DEFAULT_DETECTOR_MODEL = "nano"
+YOLO_WEIGHTS = DETECTOR_MODELS[DEFAULT_DETECTOR_MODEL]
 EMBEDDER_WEIGHTS = r"C:\Users\ameer\OneDrive\Desktop\PINCH-main\letsgo\embedder_resnet18_triplet.pt"
 RUN_DIR = r"C:\Users\ameer\OneDrive\Desktop\PINCH-main\pinch_live (1)\pinch_live"
 
@@ -50,6 +56,10 @@ CANVAS_H = 720
 
 # Detection + tracking
 DET_CONF = 0.15
+DET_CONF_BY_MODEL = {
+    "nano": 0.15,
+    "medium": 0.35,
+}
 DET_IOU = 0.70
 TRACKER_YAML = "bytetrack.yaml"
 
@@ -57,6 +67,9 @@ TRACKER_YAML = "bytetrack.yaml"
 MIN_BOX_AREA = 40 * 40
 BLUR_THRES = 25.0
 BOX_PAD_FRAC = 0.06
+MAX_BOX_FRAME_FRAC = 0.35
+MAX_BOX_WIDTH_FRAC = 0.80
+MAX_BOX_HEIGHT_FRAC = 0.85
 
 # Embedder
 EMBED_DIM = 128
@@ -159,6 +172,24 @@ def clamp_box(x1, y1, x2, y2, w, h):
     if x2 <= x1 or y2 <= y1:
         return None
     return x1, y1, x2, y2
+
+
+def box_is_reasonable(x1: int, y1: int, x2: int, y2: int, w: int, h: int) -> bool:
+    bw = max(0, x2 - x1)
+    bh = max(0, y2 - y1)
+    if bw <= 0 or bh <= 0:
+        return False
+    area = bw * bh
+    frame_area = max(w * h, 1)
+    if area < MIN_BOX_AREA:
+        return False
+    if area / frame_area > MAX_BOX_FRAME_FRAC:
+        return False
+    if bw / max(w, 1) > MAX_BOX_WIDTH_FRAC:
+        return False
+    if bh / max(h, 1) > MAX_BOX_HEIGHT_FRAC:
+        return False
+    return True
 
 def lap_var(bgr: np.ndarray) -> float:
     g = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
@@ -1051,10 +1082,14 @@ def pill_pil(draw: ImageDraw.ImageDraw, x, y, text, color, text_color=C_TEXT):
 # APP
 # ============================================================
 class PINCHApp:
-    def __init__(self, yolo: YOLO, embedder: nn.Module):
+    def __init__(self, yolo: YOLO, embedder: nn.Module, detector_models: Dict[str, str], detector_key: str):
         self.win = "PINCH Live"
         self.yolo = yolo
         self.embedder = embedder
+        self.detector_models = detector_models
+        self.detector_cache: Dict[str, YOLO] = {detector_key: yolo}
+        self.detector_key = detector_key
+        self.detector_status = ""
 
         self.running = True
         self.screen = "main"
@@ -1151,6 +1186,45 @@ class PINCHApp:
 
     def request_exit(self):
         self.running = False
+
+    def detector_display_name(self, key: Optional[str] = None) -> str:
+        name = (key or self.detector_key).strip().lower()
+        if name == "medium":
+            return "Medium"
+        if name == "nano":
+            return "Nano"
+        return name.title()
+
+    def detector_path(self, key: Optional[str] = None) -> str:
+        return self.detector_models.get((key or self.detector_key).strip().lower(), "")
+
+    def detector_conf(self) -> float:
+        return float(DET_CONF_BY_MODEL.get(self.detector_key, DET_CONF))
+
+    def switch_detector_model(self, key: str) -> bool:
+        key = key.strip().lower()
+        model_path = self.detector_path(key)
+        if not model_path:
+            self.detector_status = f"Unknown detector: {key}"
+            return False
+        if not os.path.isfile(model_path):
+            self.detector_status = f"Missing {self.detector_display_name(key)} weights"
+            return False
+        if key in self.detector_cache:
+            self.yolo = self.detector_cache[key]
+            self.detector_key = key
+            self.detector_status = f"{self.detector_display_name(key)} ready"
+            return True
+        try:
+            model = YOLO(model_path)
+        except Exception as e:
+            self.detector_status = f"Failed to load {self.detector_display_name(key)}: {e}"
+            return False
+        self.detector_cache[key] = model
+        self.yolo = model
+        self.detector_key = key
+        self.detector_status = f"{self.detector_display_name(key)} ready"
+        return True
 
     def load_registry(self):
         self.registry = None
@@ -1522,7 +1596,7 @@ class PINCHApp:
 
         self.enroll_frames += 1
         H, W = frame_bgr.shape[:2]
-        res = self.yolo.predict(frame_bgr, conf=DET_CONF, iou=DET_IOU, verbose=False)
+        res = self.yolo.predict(frame_bgr, conf=self.detector_conf(), iou=DET_IOU, verbose=False)
 
         best_crop_rgb = None
         best_box = None
@@ -1549,8 +1623,7 @@ class PINCHApp:
             b = clamp_box(x1p, y1p, x2p, y2p, W, H)
             if b is not None:
                 x1i, y1i, x2i, y2i = b
-                area = (x2i - x1i) * (y2i - y1i)
-                if area >= MIN_BOX_AREA:
+                if box_is_reasonable(x1i, y1i, x2i, y2i, W, H):
                     crop = frame_bgr[y1i:y2i, x1i:x2i]
                     if crop.size > 0 and lap_var(crop) >= BLUR_THRES:
                         best_crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
@@ -1659,7 +1732,7 @@ class PINCHApp:
         # Right Panel: Condition
         
         panel_y = 100
-        panel_h = 320
+        panel_h = 390
         col1_x = 40
         col2_x = 400
         
@@ -1679,7 +1752,7 @@ class PINCHApp:
             draw_button_pil(draw, b, primary=True)
 
         # Condition
-        self.draw_hud_panel(draw, "Condition", ["Lighting & Distance."], col2_x, panel_y, 320, panel_h)
+        self.draw_hud_panel(draw, "Condition", ["Lighting & Distance.", f"Detector: {self.detector_display_name()}"], col2_x, panel_y, 320, panel_h)
         
         near_btn = Button("Near", (col2_x + 20, panel_y + 80, 130, 50), tag="near")
         far_btn = Button("Far", (col2_x + 170, panel_y + 80, 130, 50), tag="far")
@@ -1693,8 +1766,15 @@ class PINCHApp:
         
         gt_btn = Button("Feedback Mode ON" if self.gt_enabled else "Feedback Mode OFF", (col2_x + 20, panel_y + 210, 280, 50), tag="gt")
         gt_btn.toggled = self.gt_enabled
-        
-        for b in (near_btn, far_btn, bright_btn, dim_btn, gt_btn):
+
+        nano_btn = Button("Nano", (col2_x + 20, panel_y + 280, 130, 50), tag="model_nano",
+                          enabled=os.path.isfile(self.detector_path("nano")))
+        medium_btn = Button("Medium", (col2_x + 170, panel_y + 280, 130, 50), tag="model_medium",
+                            enabled=os.path.isfile(self.detector_path("medium")))
+        nano_btn.toggled = (self.detector_key == "nano")
+        medium_btn.toggled = (self.detector_key == "medium")
+
+        for b in (near_btn, far_btn, bright_btn, dim_btn, gt_btn, nano_btn, medium_btn):
             b.hover = point_in(self.mouse_x, self.mouse_y, b.rect)
             draw_button_pil(draw, b, primary=True)
 
@@ -1716,6 +1796,8 @@ class PINCHApp:
             elif bright_btn.hover: self.condition_bright = True
             elif dim_btn.hover: self.condition_bright = False
             elif gt_btn.hover: self.gt_enabled = not self.gt_enabled
+            elif nano_btn.hover and nano_btn.enabled: self.switch_detector_model("nano")
+            elif medium_btn.hover and medium_btn.enabled: self.switch_detector_model("medium")
             elif back.hover: self.screen = "main"
             elif start.hover: self.start_trial_run(mode="live")
 
@@ -1868,7 +1950,7 @@ class PINCHApp:
 
         self.enroll_frames += 1
         H, W = frame_bgr.shape[:2]
-        res = self.yolo.predict(frame_bgr, conf=DET_CONF, iou=DET_IOU, verbose=False)
+        res = self.yolo.predict(frame_bgr, conf=self.detector_conf(), iou=DET_IOU, verbose=False)
 
         best_crop_rgb = None
         best_box = None
@@ -1886,8 +1968,7 @@ class PINCHApp:
             b = clamp_box(x1p, y1p, x2p, y2p, W, H)
             if b is not None:
                 x1i, y1i, x2i, y2i = b
-                area = (x2i - x1i) * (y2i - y1i)
-                if area >= MIN_BOX_AREA:
+                if box_is_reasonable(x1i, y1i, x2i, y2i, W, H):
                     crop = frame_bgr[y1i:y2i, x1i:x2i]
                     if crop.size > 0 and lap_var(crop) >= BLUR_THRES:
                         best_crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
@@ -2184,7 +2265,7 @@ class PINCHApp:
             frame_bgr,
             tracker=TRACKER_YAML,
             persist=True,
-            conf=DET_CONF,
+            conf=self.detector_conf(),
             iou=DET_IOU,
             verbose=False
         )[0]
@@ -2217,8 +2298,7 @@ class PINCHApp:
                     continue
                 x1i, y1i, x2i, y2i = b
 
-                area = (x2i - x1i) * (y2i - y1i)
-                if area < MIN_BOX_AREA:
+                if not box_is_reasonable(x1i, y1i, x2i, y2i, W, H):
                     continue
 
                 crop = frame_bgr[y1i:y2i, x1i:x2i]
@@ -2480,7 +2560,7 @@ def main():
         print(f"Failed to load embedder: {e}")
         return
 
-    app = PINCHApp(yolo, embedder)
+    app = PINCHApp(yolo, embedder, DETECTOR_MODELS, DEFAULT_DETECTOR_MODEL)
     app.run()
 
     try:
