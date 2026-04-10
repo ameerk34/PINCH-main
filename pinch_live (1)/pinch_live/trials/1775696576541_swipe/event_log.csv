@@ -1,0 +1,4 @@
+trial_id,trial_type,condition,t_ms,event,track_id,pred,gt,sim
+1775696576541_swipe,swipe,near/bright,1775696582183,track_new,4,,,
+1775696576541_swipe,swipe,near/bright,1775696585855,feedback_correct,4,slim r,,0.8374
+1775696576541_swipe,swipe,near/bright,1775696591789,track_lost,4,,,

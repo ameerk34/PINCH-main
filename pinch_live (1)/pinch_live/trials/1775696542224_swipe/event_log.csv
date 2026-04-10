@@ -1,0 +1,17 @@
+trial_id,trial_type,condition,t_ms,event,track_id,pred,gt,sim
+1775696542224_swipe,swipe,near/bright,1775696546344,track_new,1,,,
+1775696542224_swipe,swipe,near/bright,1775696546489,track_new,2,,,
+1775696542224_swipe,swipe,near/bright,1775696546489,track_lost,1,,,
+1775696542224_swipe,swipe,near/bright,1775696546631,track_new,3,,,
+1775696542224_swipe,swipe,near/bright,1775696546631,track_lost,2,,,
+1775696542224_swipe,swipe,near/bright,1775696546939,track_lost,3,,,
+1775696542224_swipe,swipe,near/bright,1775696549764,feedback_correct,2,big L,,0.9255
+1775696542224_swipe,swipe,near/bright,1775696553962,track_new,4,,,
+1775696542224_swipe,swipe,near/bright,1775696553963,track_lost,2,,,
+1775696542224_swipe,swipe,near/bright,1775696554425,track_new,5,,,
+1775696542224_swipe,swipe,near/bright,1775696554426,track_lost,4,,,
+1775696542224_swipe,swipe,near/bright,1775696554575,track_new,6,,,
+1775696542224_swipe,swipe,near/bright,1775696554575,track_lost,5,,,
+1775696542224_swipe,swipe,near/bright,1775696555911,track_lost,6,,,
+1775696542224_swipe,swipe,near/bright,1775696556054,track_new,8,,,
+1775696542224_swipe,swipe,near/bright,1775696556206,track_lost,8,,,

@@ -1,0 +1,16 @@
+{
+  "trial_id": "1774975824226_swipe",
+  "trial_type": "swipe",
+  "condition": "near/bright",
+  "frames": 53,
+  "duration_sec": 20.0,
+  "mean_total_latency_ms": 104.37770080566406,
+  "p95_total_latency_ms": 117.81276359558105,
+  "mean_fps": 2.65,
+  "track_count": 1,
+  "avg_switches_per_track": 2.0,
+  "frame_log_csv": "C:\\Users\\ameer\\OneDrive\\Desktop\\PINCH-main\\pinch_live (1)\\pinch_live\\trials\\1774975824226_swipe\\frame_log.csv",
+  "event_log_csv": "C:\\Users\\ameer\\OneDrive\\Desktop\\PINCH-main\\pinch_live (1)\\pinch_live\\trials\\1774975824226_swipe\\event_log.csv",
+  "gt_samples": 0,
+  "top1_accuracy": null
+}

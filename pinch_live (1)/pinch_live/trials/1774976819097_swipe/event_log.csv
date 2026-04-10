@@ -1,0 +1,10 @@
+trial_id,trial_type,condition,t_ms,event,track_id,pred,gt,sim
+1774976819097_swipe,swipe,near/bright,1774976822548,track_new,2,,,
+1774976819097_swipe,swipe,near/bright,1774976824241,feedback_correct,2,big L,,0.9009
+1774976819097_swipe,swipe,near/bright,1774976825003,track_lost,2,,,
+1774976819097_swipe,swipe,near/bright,1774976827443,track_new,6,,,
+1774976819097_swipe,swipe,near/bright,1774976829107,feedback_incorrect,6,slim r,,0.8418
+1774976819097_swipe,swipe,near/bright,1774976830919,track_lost,6,,,
+1774976819097_swipe,swipe,near/bright,1774976831291,track_new,7,,,
+1774976819097_swipe,swipe,near/bright,1774976835382,feedback_incorrect,7,slim r,,0.9007
+1774976819097_swipe,swipe,near/bright,1774976838478,track_lost,7,,,

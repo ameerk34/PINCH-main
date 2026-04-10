@@ -1,0 +1,12 @@
+trial_id,trial_type,condition,t_ms,event,track_id,pred,gt,sim
+1774975855237_interfere,interfere,near/bright,1774975855561,track_new,1,,,
+1774975855237_interfere,interfere,near/bright,1774975855690,track_lost,1,,,
+1774975855237_interfere,interfere,near/bright,1774975856172,track_new,2,,,
+1774975855237_interfere,interfere,near/bright,1774975857599,track_new,10,,,
+1774975855237_interfere,interfere,near/bright,1774975857600,track_new,11,,,
+1774975855237_interfere,interfere,near/bright,1774975857600,track_lost,2,,,
+1774975855237_interfere,interfere,near/bright,1774975857721,track_lost,11,,,
+1774975855237_interfere,interfere,near/bright,1774975858938,track_new,21,,,
+1774975855237_interfere,interfere,near/bright,1774975858939,track_lost,10,,,
+1774975855237_interfere,interfere,near/bright,1774975860677,track_lost,21,,,
+1774975855237_interfere,interfere,near/bright,1774975860888,track_lost,21,,,
